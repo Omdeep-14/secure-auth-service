@@ -1,0 +1,1 @@
+ALTER TABLE refresh_tokens add COLUMN family_id UUID NOT NULL;
