@@ -2,6 +2,8 @@ import {
   type signupSchemaType,
   type verifySignUpSchemaType,
   type loginSchemaType,
+  type forgotPasswordType,
+  type emailType,
 } from "../schema/auth.schema.js";
 import { pool } from "../config/db.js";
 import { AppError } from "../utils.ts/appError.js";
@@ -15,6 +17,7 @@ import {
   hashRefreshToken,
 } from "../utils.ts/tokens.js";
 import crypto from "node:crypto";
+import { checkRateLimit } from "../utils.ts/rateLimiter.js";
 
 export const signupService = async ({
   name,
@@ -209,7 +212,7 @@ export const refreshTokenService = async (refreshToken: string) => {
       await client.query(
         `
     UPDATE refresh_tokens
-    SET revoked_at = COALESCE(revoked_at, NOW())
+    SET revoked_at = NOW()
     WHERE family_id = $1
     `,
         [storedToken.family_id],
@@ -272,4 +275,127 @@ export const refreshTokenService = async (refreshToken: string) => {
   } finally {
     client.release();
   }
+};
+
+export const forgotPasswordService = async (email: string) => {
+  const rateLimitKey = `rateLimit:forgotPassword:${email}`;
+
+  await checkRateLimit(rateLimitKey, 3, 15 * 60);
+
+  const user = await pool.query(`SELECT id FROM Users where email=$1 `, [
+    email,
+  ]);
+
+  if (user.rows.length < 1) {
+    return;
+  }
+
+  const otp = genOtp();
+
+  const otpHash = await hashPassword(otp);
+  const redisData = {
+    otpHash,
+    attempts: 0,
+  };
+
+  const redisKey = `forgotPass:${email}`;
+
+  await redis.set(redisKey, JSON.stringify(redisData), "EX", 5 * 60);
+
+  await sendOtpEmail(email, otp);
+};
+
+export const verifyForgotPassword = async ({
+  email,
+  otp,
+  newPassword,
+}: forgotPasswordType) => {
+  const redisKey = `forgotPass:${email}`;
+
+  const redisData = await redis.get(redisKey);
+
+  if (!redisData) {
+    throw new AppError(400, "Otp expired");
+  }
+
+  const data = JSON.parse(redisData);
+
+  if (data.attempts >= 5) {
+    await redis.del(redisKey);
+
+    throw new AppError(
+      429,
+      "Too many sign up attempts ,please try again after some time",
+    );
+  }
+
+  const validOtp = await verifyPassword(otp, data.otpHash);
+
+  if (!validOtp) {
+    data.attempts += 1;
+
+    const ttl = await redis.ttl(redisKey);
+
+    await redis.set(redisKey, JSON.stringify(data), "EX", ttl);
+
+    throw new AppError(400, "Invalid otp");
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const userResult = await client.query(
+      `
+      UPDATE users
+      SET password_hash = $1,
+          updated_at = NOW()
+      WHERE email = $2
+      RETURNING id
+      `,
+      [passwordHash, email],
+    );
+
+    if (userResult.rows.length === 0) {
+      throw new AppError(400, "Invalid request");
+    }
+
+    const userId = userResult.rows[0].id;
+
+    await client.query(
+      `
+      UPDATE refresh_tokens
+      SET revoked_at = NOW()
+      WHERE user_id = $1
+        AND revoked_at IS NULL
+      `,
+      [userId],
+    );
+
+    await client.query("COMMIT");
+
+    await redis.del(redisKey);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const logoutService = async (refreshToken: string) => {
+  const tokenHash = hashRefreshToken(refreshToken);
+
+  await pool.query(
+    `
+    UPDATE refresh_tokens
+    SET revoked_at = NOW()
+    WHERE token_hash = $1
+      AND revoked_at IS NULL
+    `,
+    [tokenHash],
+  );
 };

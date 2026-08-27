@@ -3,17 +3,21 @@ import {
   signupSchema,
   verifySignupSchema,
   loginSchema,
+  emailSchema,
+  forgotPasswordSchema,
 } from "../schema/auth.schema.js";
 import {
   signupService,
   verifySignupService,
   loginService,
   refreshTokenService,
+  forgotPasswordService,
+  verifyForgotPassword,
+  logoutService,
 } from "../service/auth.service.js";
 import { env } from "../config/env.js";
 import { AppError } from "../utils.ts/appError.js";
 import { generateCsrfToken } from "../utils.ts/tokens.js";
-import { success } from "zod";
 
 export async function signupController(req: Request, res: Response) {
   const validBody = signupSchema.safeParse(req.body);
@@ -60,8 +64,9 @@ export const loginController = async (req: Request, res: Response) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     secure: env.NODE_ENV === "prod",
-    sameSite: "lax",
+    sameSite: "none",
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/auth",
   });
 
   return res.status(201).json({
@@ -83,8 +88,8 @@ export const refreshTokenController = async (req: Request, res: Response) => {
 
   res.cookie("refreshToken", newRefreshToken, {
     httpOnly: true,
-    secure: false,
-    sameSite: "lax",
+    secure: env.NODE_ENV === "prod",
+    sameSite: "none",
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/auth",
   });
@@ -102,8 +107,8 @@ export const csrfController = (req: Request, res: Response) => {
 
   res.cookie("csrfToken", csrfToken, {
     httpOnly: false,
-    secure: true,
-    sameSite: false,
+    secure: env.NODE_ENV === "prod",
+    sameSite: "none",
     maxAge: 15 * 60 * 1000,
     path: "/",
   });
@@ -111,5 +116,56 @@ export const csrfController = (req: Request, res: Response) => {
   return res.status(200).json({
     success: true,
     csrfToken,
+  });
+};
+
+export const forgotPasswordController = async (req: Request, res: Response) => {
+  const data = req.body;
+
+  const validEmail = emailSchema.safeParse(data);
+
+  if (!validEmail.success) {
+    throw validEmail.error;
+  }
+
+  await forgotPasswordService(validEmail.data.email);
+
+  return res.status(200).json({
+    message: "If that email exists,an OTP has been sent",
+  });
+};
+
+export const forgotPasswordVerify = async (req: Request, res: Response) => {
+  const validData = forgotPasswordSchema.safeParse(req.body);
+
+  if (!validData.success) {
+    throw validData.error;
+  }
+
+  await verifyForgotPassword(validData.data);
+
+  res.status(201).json({
+    success: true,
+    message: "Password reset success",
+  });
+};
+
+export const logoutController = async (req: Request, res: Response) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (refreshToken) {
+    await logoutService(refreshToken);
+  }
+
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: env.NODE_ENV === "prod",
+    sameSite: "none",
+    path: "/auth",
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Logged out successfully",
   });
 };
