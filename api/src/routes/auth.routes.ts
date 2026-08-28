@@ -7,6 +7,7 @@ import {
   csrfController,
   forgotPasswordController,
   forgotPasswordVerify,
+  logoutController,
 } from "../controllers/auth.controller.js";
 import { csrfProtection } from "../middlewares/csrf.middleware.js";
 import { rateLimit } from "../middlewares/rateLimit.middleware.js";
@@ -33,5 +34,6 @@ router.post(
   rateLimit(10, 15 * 60),
   forgotPasswordVerify,
 );
+router.post("/logout", rateLimit(10, 15 * 60), logoutController);
 
 export default router;

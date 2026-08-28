@@ -64,9 +64,9 @@ export const loginController = async (req: Request, res: Response) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     secure: env.NODE_ENV === "prod",
-    sameSite: "none",
+    sameSite: env.NODE_ENV === "prod" ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/auth",
+    path: "/api/auth",
   });
 
   return res.status(201).json({
@@ -91,7 +91,7 @@ export const refreshTokenController = async (req: Request, res: Response) => {
     secure: env.NODE_ENV === "prod",
     sameSite: "none",
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/auth",
+    path: "/api/auth",
   });
 
   return res.status(200).json({
@@ -131,6 +131,7 @@ export const forgotPasswordController = async (req: Request, res: Response) => {
   await forgotPasswordService(validEmail.data.email);
 
   return res.status(200).json({
+    success: true,
     message: "If that email exists,an OTP has been sent",
   });
 };
@@ -161,7 +162,7 @@ export const logoutController = async (req: Request, res: Response) => {
     httpOnly: true,
     secure: env.NODE_ENV === "prod",
     sameSite: "none",
-    path: "/auth",
+    path: "/api/auth",
   });
 
   return res.status(200).json({

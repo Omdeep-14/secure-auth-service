@@ -70,7 +70,7 @@ export const verifySignupService = async ({
 
   const data = JSON.parse(signupData);
 
-  if (data.attempts > 5) {
+  if (data.attempts >= 5) {
     await redis.del(redisKey);
 
     throw new AppError(

@@ -1,9 +1,9 @@
-import { exit } from "node:process";
+import "dotenv/config";
 import { z } from "zod";
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
-  NODE_ENV: z.enum(["dev", "prod"]),
+  NODE_ENV: z.enum(["dev", "prod", "test"]),
   DATABASE_URL: z.url({ message: "Database url must be a valid string" }),
   REDIS_URL: z.url({ message: "Please provide a valid redis url" }),
   SMTP_HOST: z.string(),

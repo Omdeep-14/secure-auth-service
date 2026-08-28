@@ -27,3 +27,5 @@ router.get(
   checkRole("user", "admin"),
   commonDashboardController,
 );
+
+export default router;
